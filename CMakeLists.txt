@@ -5,4 +5,4 @@ Set (AllegroHand_VERSION_MAJOR 1)
 Set (AllegroHand_VERSION_MINOR 0)
 
 set (CMAKE_CXX_FLAGS "-O2 -Wall")
-add_subdirectory (grasp)
+add_subdirectory (cpp/grasp)
