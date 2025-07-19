@@ -112,3 +112,163 @@ class AllegroCommand:
             return False
             
         return True
+
+@dataclass 
+class AllegroHandState:
+    """Complete hand state response from ZMQ server"""
+    def __init__(self, response_dict: Optional[dict] = None):
+        if response_dict is None:
+            response_dict = {}
+            
+        # Response metadata
+        self.type = response_dict.get('type', 0)
+        self.success = response_dict.get('success', False)
+        self.message = response_dict.get('message', '')
+        
+        # Hand configuration
+        self.hand_type = response_dict.get('hand_type', 0)  # 0=Left, 1=Right
+        self.time_interval = response_dict.get('time_interval', 0.003)
+        self.motion_type = response_dict.get('motion_type', 0)
+        
+        # Joint data (16 joints)
+        self.qpos_measured = np.array(response_dict.get('qpos_measured', [0.0] * 16))
+        self.qpos_commanded = np.array(response_dict.get('qpos_commanded', [0.0] * 16))
+        self.tau_commanded = np.array(response_dict.get('tau_commanded', [0.0] * 16))
+        
+        # Fingertip positions (4 fingers x 3 coordinates)
+        fingertip_pos = response_dict.get('fingertip_positions', [[0.0, 0.0, 0.0]] * 4)
+        self.fingertip_positions = np.array(fingertip_pos)
+        
+        # Grasping forces (4 fingers x 3 directions)  
+        grasp_forces = response_dict.get('grasping_forces', [[0.0, 0.0, 0.0]] * 4)
+        self.grasping_forces = np.array(grasp_forces)
+        
+        # Additional data
+        self.data = response_dict.get('data', [])
+    
+    @classmethod
+    def from_json(cls, json_str: str):
+        """Create AllegroHandState from JSON string"""
+        try:
+            response_dict = json.loads(json_str)
+            return cls(response_dict)
+        except json.JSONDecodeError as e:
+            # Return error state
+            error_state = cls()
+            error_state.success = False
+            error_state.message = f"JSON decode error: {e}"
+            return error_state
+    
+    def get_motion_name(self) -> str:
+        """Get human-readable motion type name"""
+        return AllegroMotionType.get_motion_name(self.motion_type)
+    
+    def get_hand_type_name(self) -> str:
+        """Get human-readable hand type name"""
+        return "LEFT" if self.hand_type == AllegroHandType.LEFT else "RIGHT"
+    
+    def is_successful(self) -> bool:
+        """Check if the command was successful"""
+        return self.success
+    
+    def __str__(self):
+        return f"AllegroHandState(success={self.success}, motion={self.get_motion_name()}, hand={self.get_hand_type_name()})"
+    
+    def __repr__(self):
+        return self.__str__()
+
+
+class AllegroHandClient:
+    """ZMQ Client for communicating with Allegro Hand server"""
+    
+    def __init__(self, server_address: str = "tcp://localhost:5556"):
+        """Initialize ZMQ client
+        
+        Args:
+            server_address: ZMQ server address (default: tcp://localhost:5556)
+        """
+        import zmq
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect(server_address)
+        self.server_address = server_address
+    
+    def send_command(self, command: AllegroCommand) -> AllegroHandState:
+        """Send command to server and get hand state response
+        
+        Args:
+            command: AllegroCommand to send
+            
+        Returns:
+            AllegroHandState: Current hand state after command execution
+        """
+        try:
+            # Convert command to JSON
+            json_cmd = {
+                "motion_type": command.motion_type,
+                "joint_positions": command.joint_positions.tolist(),
+                "desired_positions": command.desired_positions.tolist(), 
+                "grasping_forces": command.grasping_forces.tolist(),
+                "fingertip_positions": command.fingertip_positions,
+                "object_displacement": command.object_displacement,
+                "time_interval": command.time_interval
+            }
+            
+            # Add any additional parameters
+            for attr_name in dir(command):
+                if not attr_name.startswith('_') and attr_name not in json_cmd:
+                    attr_value = getattr(command, attr_name)
+                    if not callable(attr_value):
+                        json_cmd[attr_name] = attr_value
+            
+            json_str = json.dumps(json_cmd)
+            
+            # Send command
+            self.socket.send_string(json_str)
+            
+            # Receive response
+            response_str = self.socket.recv_string()
+            
+            # Parse response
+            return AllegroHandState.from_json(response_str)
+            
+        except Exception as e:
+            # Return error state
+            error_state = AllegroHandState()
+            error_state.success = False
+            error_state.message = f"Communication error: {e}"
+            return error_state
+    
+    def get_hand_state(self) -> AllegroHandState:
+        """Get current hand state without sending a command
+        
+        Returns:
+            AllegroHandState: Current hand state
+        """
+        # Send a minimal command just to get state
+        cmd = AllegroCommand(motion_type=AllegroMotionType.eMotionType_NONE)
+        return self.send_command(cmd)
+    
+    def close(self):
+        """Close ZMQ connection"""
+        self.socket.close()
+        self.context.term()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+def create_allegro_hand(hand_type: str = "right", server_address: str = "tcp://localhost:5556") -> AllegroHandClient:
+    """Create and return an AllegroHandClient
+    
+    Args:
+        hand_type: "left" or "right" (for compatibility, not used by client)
+        server_address: ZMQ server address
+        
+    Returns:
+        AllegroHandClient: Ready-to-use client
+    """
+    return AllegroHandClient(server_address)

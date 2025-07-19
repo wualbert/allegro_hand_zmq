@@ -272,7 +272,7 @@ void MainLoop()
                 q_des[i] = jsonParser->GetDesiredQ()[i];
             }
             success = response.success;
-            response_str = response.success ? "succ" : "fail: " + response.message;
+            response_str = jsonParser->responseToJson(response);
             
         } else{
             std::cout << "Received non-JSON command" << std::endl;
@@ -293,7 +293,7 @@ void MainLoop()
 void ComputeTorque()
 {
     if (!pBHand || !jsonParser) return;
-    jsonParser->ComputeJointTorques(q, tau_des);
+    jsonParser->UpdateControl(q, tau_des);
 //    static int j_active[] = {
 //        0, 0, 0, 0,
 //        0, 0, 0, 0,

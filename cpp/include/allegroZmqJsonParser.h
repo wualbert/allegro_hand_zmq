@@ -22,12 +22,55 @@ enum AllegroZmqResponseType {
  */
 struct AllegroZmqResponse {
     AllegroZmqResponseType type;
-    std::vector<double> data;
-    std::string message;
     bool success;
+    std::string message;
     
-    AllegroZmqResponse() : type(RESP_SUCCESS), success(true) {}
-    AllegroZmqResponse(AllegroZmqResponseType t, bool s = true) : type(t), success(s) {}
+    // Hand state data
+    std::vector<double> qpos_measured;     // Current joint positions (16)
+    std::vector<double> tau_commanded;      // Computed joint torques (16)
+    std::vector<double> qpos_commanded;    // Desired joint positions (16)
+    
+    // Fingertip positions (4 fingers x 3 coordinates)
+    std::vector<double> fingertip_x;           // X coordinates of fingertips (4)
+    std::vector<double> fingertip_y;           // Y coordinates of fingertips (4)
+    std::vector<double> fingertip_z;           // Z coordinates of fingertips (4)
+    
+    // Grasping forces (4 fingers x 3 directions)
+    std::vector<double> grasp_force_x;         // X-direction forces (4)
+    std::vector<double> grasp_force_y;         // Y-direction forces (4)
+    std::vector<double> grasp_force_z;         // Z-direction forces (4)
+    
+    // Hand configuration
+    int hand_type;                             // Left (0) or Right (1) hand
+    double time_interval;                      // Control time interval
+    int motion_type;                           // Current motion type
+    
+    // Additional data for custom responses
+    std::vector<double> data;
+    
+    AllegroZmqResponse() : type(RESP_SUCCESS), success(true), hand_type(0), time_interval(0.003), motion_type(0) {
+        qpos_measured.resize(16, 0.0);
+        tau_commanded.resize(16, 0.0);
+        qpos_commanded.resize(16, 0.0);
+        fingertip_x.resize(4, 0.0);
+        fingertip_y.resize(4, 0.0);
+        fingertip_z.resize(4, 0.0);
+        grasp_force_x.resize(4, 0.0);
+        grasp_force_y.resize(4, 0.0);
+        grasp_force_z.resize(4, 0.0);
+    }
+    
+    AllegroZmqResponse(AllegroZmqResponseType t, bool s = true) : type(t), success(s), hand_type(0), time_interval(0.003), motion_type(0) {
+        qpos_measured.resize(16, 0.0);
+        tau_commanded.resize(16, 0.0);
+        qpos_commanded.resize(16, 0.0);
+        fingertip_x.resize(4, 0.0);
+        fingertip_y.resize(4, 0.0);
+        fingertip_z.resize(4, 0.0);
+        grasp_force_x.resize(4, 0.0);
+        grasp_force_y.resize(4, 0.0);
+        grasp_force_z.resize(4, 0.0);
+    }
 };
 
 /**
@@ -77,7 +120,14 @@ public:
      * @return Response object
      */
     AllegroZmqResponse parseJsonAndExecute(const std::string& jsonStr);
-    void ComputeJointTorques(double* current_q, double* result_torques);
+    void UpdateControl(double* current_q, double* result_torques);
+    
+    /**
+     * @brief Convert response to JSON string
+     * @param response Response object
+     * @return JSON string representation
+     */
+    std::string responseToJson(const AllegroZmqResponse& response);
 
 private:
     BHand* pBHand;                    ///< Pointer to BHand instance
@@ -182,13 +232,20 @@ private:
     AllegroZmqResponse createErrorResponse(const std::string& message);
     
     /**
-     * @brief Create success response
+     * @brief Create success response with full hand state
      * @param message Success message
      * @param data Optional data
-     * @return Success response object
+     * @return Success response object with all hand states populated
      */
     AllegroZmqResponse createSuccessResponse(const std::string& message, 
                                            const std::vector<double>& data = std::vector<double>());
+    
+    /**
+     * @brief Populate response with current hand state from BHand
+     * @param response Response object to populate
+     * @return True if successful
+     */
+    bool populateHandState(AllegroZmqResponse& response);
     
     /**
      * @brief Check if BHand is initialized

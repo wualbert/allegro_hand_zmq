@@ -80,7 +80,7 @@ AllegroZmqResponse AllegroZmqJsonParser::parseJsonAndExecute(const std::string& 
 }
 
 // Compute joint torques
-void AllegroZmqJsonParser::ComputeJointTorques(double* current_q, double* result_torques) {
+void AllegroZmqJsonParser::UpdateControl(double* current_q, double* result_torques) {
     for (int i = 0; i < MAX_DOF; i++) {
         currentQ[i] = current_q[i];
     }
@@ -373,11 +373,119 @@ AllegroZmqResponse AllegroZmqJsonParser::createErrorResponse(const std::string& 
     return response;
 }
 
-// Create success response
+// Create success response with full hand state
 AllegroZmqResponse AllegroZmqJsonParser::createSuccessResponse(const std::string& message, 
                                                              const std::vector<double>& data) {
     AllegroZmqResponse response(RESP_SUCCESS, true);
     response.message = message;
     response.data = data;
+    
+    // Populate with current hand state
+    populateHandState(response);
+    
     return response;
+}
+
+// Populate response with current hand state from BHand
+bool AllegroZmqJsonParser::populateHandState(AllegroZmqResponse& response) {
+    if (!pBHand) return false;
+    
+    try {
+        // Get hand type
+        response.hand_type = static_cast<int>(pBHand->GetType());
+        
+        // Get time interval
+        response.time_interval = pBHand->GetTimeInterval();
+        
+        // Get current joint positions (copy from internal state)
+        for (size_t i = 0; i < currentQ.size() && i < 16; i++) {
+            response.qpos_measured[i] = currentQ[i];
+        }
+        
+        // Get desired joint positions
+        for (size_t i = 0; i < desiredQ.size() && i < 16; i++) {
+            response.qpos_commanded[i] = desiredQ[i];
+        }
+        
+        // Get joint torques
+        double tau[16];
+        pBHand->GetJointTorque(tau);
+        for (int i = 0; i < 16; i++) {
+            response.tau_commanded[i] = tau[i];
+        }
+        
+        // Get fingertip positions
+        double x[4], y[4], z[4];
+        pBHand->GetFKResult(x, y, z);
+        for (int i = 0; i < 4; i++) {
+            response.fingertip_x[i] = x[i];
+            response.fingertip_y[i] = y[i];
+            response.fingertip_z[i] = z[i];
+        }
+        
+        // Get grasping forces
+        double fx[4], fy[4], fz[4];
+        pBHand->GetGraspingForce(fx, fy, fz);
+        for (int i = 0; i < 4; i++) {
+            response.grasp_force_x[i] = fx[i];
+            response.grasp_force_y[i] = fy[i];
+            response.grasp_force_z[i] = fz[i];
+        }
+        
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Convert response to JSON string
+std::string AllegroZmqJsonParser::responseToJson(const AllegroZmqResponse& response) {
+    nlohmann::json j;
+    
+    try {
+        // Response metadata
+        j["type"] = static_cast<int>(response.type);
+        j["success"] = response.success;
+        j["message"] = response.message;
+        
+        // Hand configuration
+        j["hand_type"] = response.hand_type;
+        j["time_interval"] = response.time_interval;
+        j["motion_type"] = response.motion_type;
+        
+        // Joint data
+        j["qpos_measured"] = response.qpos_measured;
+        j["qpos_commanded"] = response.qpos_commanded;
+        j["tau_commanded"] = response.tau_commanded;
+        
+        // Fingertip positions
+        j["fingertip_positions"] = {
+            {response.fingertip_x[0], response.fingertip_y[0], response.fingertip_z[0]},
+            {response.fingertip_x[1], response.fingertip_y[1], response.fingertip_z[1]},
+            {response.fingertip_x[2], response.fingertip_y[2], response.fingertip_z[2]},
+            {response.fingertip_x[3], response.fingertip_y[3], response.fingertip_z[3]}
+        };
+        
+        // Grasping forces
+        j["grasping_forces"] = {
+            {response.grasp_force_x[0], response.grasp_force_y[0], response.grasp_force_z[0]},
+            {response.grasp_force_x[1], response.grasp_force_y[1], response.grasp_force_z[1]},
+            {response.grasp_force_x[2], response.grasp_force_y[2], response.grasp_force_z[2]},
+            {response.grasp_force_x[3], response.grasp_force_y[3], response.grasp_force_z[3]}
+        };
+        
+        // Additional data if present
+        if (!response.data.empty()) {
+            j["data"] = response.data;
+        }
+        
+        return j.dump();
+    } catch (const std::exception& e) {
+        // Return error JSON if serialization fails
+        nlohmann::json error_j;
+        error_j["type"] = static_cast<int>(RESP_ERROR);
+        error_j["success"] = false;
+        error_j["message"] = "JSON serialization error: " + std::string(e.what());
+        return error_j.dump();
+    }
 }
