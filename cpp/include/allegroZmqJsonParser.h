@@ -77,6 +77,7 @@ public:
      * @return Response object
      */
     AllegroZmqResponse parseJsonAndExecute(const std::string& jsonStr);
+    void ComputeJointTorques(double* current_q, double* result_torques);
 
 private:
     BHand* pBHand;                    ///< Pointer to BHand instance

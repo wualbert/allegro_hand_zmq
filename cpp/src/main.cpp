@@ -42,6 +42,7 @@ double curTime = 0.0;
 /////////////////////////////////////////////////////////////////////////////////////////
 // for BHand library
 BHand* pBHand = NULL;
+AllegroZmqJsonParser* jsonParser = NULL;
 double q[MAX_DOF];
 double q_des[MAX_DOF];
 double tau_des[MAX_DOF];
@@ -245,7 +246,7 @@ void MainLoop()
     std::cout << "ZMQ setup done" << endl;
     
     // Create JSON parser
-    AllegroZmqJsonParser* jsonParser = new AllegroZmqJsonParser(pBHand);
+    jsonParser = new AllegroZmqJsonParser(pBHand);
 
     while (bRun)
     {
@@ -291,12 +292,8 @@ void MainLoop()
 // Compute control torque for each joint using BHand library
 void ComputeTorque()
 {
-    if (!pBHand) return;
-    pBHand->SetJointPosition(q); // tell BHand library the current joint positions
-    pBHand->SetJointDesiredPosition(q_des);
-    pBHand->UpdateControl(0);
-    pBHand->GetJointTorque(tau_des);
-
+    if (!pBHand || !jsonParser) return;
+    jsonParser->ComputeJointTorques(q, tau_des);
 //    static int j_active[] = {
 //        0, 0, 0, 0,
 //        0, 0, 0, 0,

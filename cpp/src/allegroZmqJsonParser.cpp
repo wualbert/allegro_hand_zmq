@@ -79,6 +79,17 @@ AllegroZmqResponse AllegroZmqJsonParser::parseJsonAndExecute(const std::string& 
     }
 }
 
+// Compute joint torques
+void AllegroZmqJsonParser::ComputeJointTorques(double* current_q, double* result_torques) {
+    for (int i = 0; i < MAX_DOF; i++) {
+        currentQ[i] = current_q[i];
+    }
+    pBHand->SetJointPosition(current_q); // tell BHand library the current joint positions
+    pBHand->SetJointDesiredPosition(desiredQ.data());
+    pBHand->UpdateControl(0);
+    pBHand->GetJointTorque(result_torques);
+}
+
 // Parse JSON command
 AllegroJsonCommand AllegroZmqJsonParser::parseJsonCommand(const std::string& jsonStr) {
     AllegroJsonCommand cmd;
