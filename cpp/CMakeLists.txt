@@ -3,6 +3,7 @@ set(SOURCE_FILES
     src/main.cpp
     src/canAPI.cpp
     src/RockScissorsPaper.cpp
+    src/allegroZmqJsonParser.cpp
 )
 
 # Create the executable
@@ -10,6 +11,11 @@ add_executable(grasp ${SOURCE_FILES})
 
 # Include directories for this target
 target_include_directories(grasp PRIVATE include)
+
+# Add conda environment include path for nlohmann/json
+if(DEFINED ENV{CONDA_PREFIX})
+    target_include_directories(grasp PRIVATE $ENV{CONDA_PREFIX}/include)
+endif()
 
 # Find cppzmq wrapper
 find_package(cppzmq QUIET)
